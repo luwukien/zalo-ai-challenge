@@ -1,0 +1,39 @@
+# Project data must stay local, including nested data directories.
+datasets/
+data/
+
+# Local secrets and configuration.
+.env
+.env.*
+*.pem
+*.key
+
+# Python environments and caches.
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# Dependencies, build artifacts, and local caches.
+node_modules/
+dist/
+build/
+.cache/
+
+# Model artifacts and generated outputs.
+models/
+checkpoints/
+outputs/
+runs/
+wandb/
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+*.onnx
+*.gguf
+*.log

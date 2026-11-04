@@ -7,7 +7,8 @@ from pathlib import Path
 import sqlite3
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
+from contextlib import nullcontext
 
 import numpy as np
 import openpyxl
@@ -298,6 +299,42 @@ class FixtureTests(unittest.TestCase):
         self.assertEqual(model.inputs(messages), {"input_ids": "example"})
         self.assertTrue(model.processor.kwargs["add_generation_prompt"])
         self.assertNotIn("enable_thinking", model.processor.kwargs)
+
+    def test_qwen_generation_preserves_full_prompt_and_bounds_prefill(self):
+        model = baseline.QwenModel.__new__(baseline.QwenModel)
+        model.config = baseline.Config()
+        model.skip_special_tokens = True
+        inputs = MagicMock()
+        inputs.to.return_value = inputs
+        input_ids = MagicMock()
+        input_ids.shape = (1, 12000)
+        inputs.__getitem__.return_value = input_ids
+        inputs.keys.return_value = ["input_ids"]
+        model.inputs = MagicMock(return_value=inputs)
+        model.model = MagicMock()
+        model.model.generate.return_value = [list(range(12000)) + [7, 8]]
+        model.processor = MagicMock()
+        model.processor.decode.return_value = "answer"
+        torch = MagicMock()
+        torch.inference_mode.side_effect = nullcontext
+        with patch.dict("sys.modules", {"torch": torch, "transformers": MagicMock()}):
+            result = model.generate([], max_new_tokens=32, repair=False, seed=42)
+        kwargs = model.model.generate.call_args.kwargs
+        self.assertIs(kwargs["input_ids"], input_ids)
+        self.assertEqual(kwargs["prefill_chunk_size"], 256)
+        self.assertEqual(kwargs["logits_to_keep"], 1)
+        self.assertEqual(kwargs["cache_implementation"], "dynamic")
+        self.assertTrue(kwargs["use_cache"])
+        self.assertEqual((result.input_tokens, result.output_tokens), (12000, 2))
+        model.processor.decode.assert_called_once_with([7, 8], skip_special_tokens=True)
+
+    def test_prefill_config_validation_and_gemma_unchanged(self):
+        self.assertEqual(baseline.HFModel.__new__(baseline.HFModel).generation_options(), {})
+        model = baseline.QwenModel.__new__(baseline.QwenModel)
+        for size in (0, -1, True, 1.5):
+            model.config = baseline.Config(qwen_prefill_chunk_size=size)
+            with self.subTest(size=size), self.assertRaises(ValueError):
+                model.generation_options()
 
     def test_kaggle_notebook_is_clean_and_python_cells_parse(self):
         path = Path(__file__).resolve().parents[1] / "notebooks/datamate_qwen_kaggle.ipynb"

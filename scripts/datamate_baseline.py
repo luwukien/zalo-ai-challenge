@@ -459,6 +459,7 @@ class Config:
     exec_timeout: float = 60
     max_input_tokens: int = 12288
     max_new_tokens: int = 2048
+    qwen_prefill_chunk_size: int = 256
     model_id: str = MODEL_ID
     revision: str = "main"
     enable_thinking: bool = False
@@ -526,6 +527,9 @@ class HFModel:
     def count_tokens(self, messages):
         return int(self.inputs(messages)["input_ids"].shape[-1])
 
+    def generation_options(self):
+        return {}
+
     def generate(self, messages, *, max_new_tokens, repair, seed):
         import torch
         from transformers import set_seed
@@ -535,6 +539,7 @@ class HFModel:
             inputs = self.inputs(messages).to("cuda:0")
             input_len = inputs["input_ids"].shape[-1]
             kwargs = {"max_new_tokens": max_new_tokens, "do_sample": repair, "use_cache": True}
+            kwargs.update(self.generation_options())
             if repair:
                 kwargs.update(temperature=1.0, top_p=0.9)
             with torch.inference_mode():
@@ -551,11 +556,21 @@ class HFModel:
             torch.cuda.synchronize()
             return Generation(text.strip(), int(input_len), int(len(generated)), time.perf_counter() - started)
         except Exception as exc:
-            raise RuntimeFailure(f"Model/GPU generation failed: {type(exc).__name__}: {exc}") from exc
+            raise RuntimeFailure(f"Model/GPU generation failed: {type(exc).__name__}: {exc}\n"
+                                 f"{traceback.format_exc()}") from exc
 
 
 class QwenModel(HFModel):
     """Text-only Qwen backend for a single Kaggle T4; no model offloading."""
+    def generation_options(self):
+        # Bound prefill activations even when SDPA falls back to its math backend.
+        # Keep the entire prompt and KV cache; only split the forward computation.
+        size = self.config.qwen_prefill_chunk_size
+        if type(size) is not int or size <= 0:
+            raise ValueError("qwen_prefill_chunk_size must be a positive integer")
+        return {"prefill_chunk_size": size, "logits_to_keep": 1,
+                "cache_implementation": "dynamic"}
+
     def __init__(self, config):
         started = time.perf_counter()
         try:
@@ -582,6 +597,7 @@ class QwenModel(HFModel):
                          "gpu": torch.cuda.get_device_name(0), "vram_total_bytes": total,
                          "vram_free_before_load_bytes": free, "dtype": str(dtype), "quantization": "nf4-double",
                          "versions": package_versions(), "model_load_seconds": time.perf_counter() - started}
+            self.info["generation_options"] = self.generation_options()
         except RuntimeFailure:
             raise
         except Exception as exc:

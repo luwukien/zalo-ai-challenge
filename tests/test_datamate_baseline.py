@@ -287,6 +287,27 @@ class FixtureTests(unittest.TestCase):
                 self.assertIsNone(cell["execution_count"])
                 ast.parse("".join(cell["source"]))
 
+    def test_qwen_uses_text_chat_template(self):
+        class Tokenizer:
+            def apply_chat_template(self, messages, **kwargs):
+                self.messages, self.kwargs = messages, kwargs
+                return {"input_ids": "example"}
+        model = baseline.QwenModel.__new__(baseline.QwenModel)
+        model.processor = Tokenizer()
+        messages = [{"role": "user", "content": "hello"}]
+        self.assertEqual(model.inputs(messages), {"input_ids": "example"})
+        self.assertTrue(model.processor.kwargs["add_generation_prompt"])
+        self.assertNotIn("enable_thinking", model.processor.kwargs)
+
+    def test_kaggle_notebook_is_clean_and_python_cells_parse(self):
+        path = Path(__file__).resolve().parents[1] / "notebooks/datamate_qwen_kaggle.ipynb"
+        notebook = json.loads(path.read_text(encoding="utf-8"))
+        for cell in notebook["cells"]:
+            if cell["cell_type"] == "code":
+                self.assertEqual(cell["outputs"], [])
+                self.assertIsNone(cell["execution_count"])
+                ast.parse("".join(cell["source"]))
+
 
 if __name__ == "__main__":
     unittest.main()

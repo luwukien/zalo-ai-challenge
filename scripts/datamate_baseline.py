@@ -540,7 +540,7 @@ class HFModel:
             with torch.inference_mode():
                 outputs = self.model.generate(**inputs, **kwargs)
             generated = outputs[0][input_len:]
-            text = self.processor.decode(generated, skip_special_tokens=False)
+            text = self.processor.decode(generated, skip_special_tokens=getattr(self, "skip_special_tokens", False))
             # Parse the final channel, so optional thinking cannot be mistaken for code.
             if "<|channel>final" in text:
                 text = text.split("<|channel>final", 1)[1]
@@ -552,6 +552,44 @@ class HFModel:
             return Generation(text.strip(), int(input_len), int(len(generated)), time.perf_counter() - started)
         except Exception as exc:
             raise RuntimeFailure(f"Model/GPU generation failed: {type(exc).__name__}: {exc}") from exc
+
+
+class QwenModel(HFModel):
+    """Text-only Qwen backend for a single Kaggle T4; no model offloading."""
+    def __init__(self, config):
+        started = time.perf_counter()
+        try:
+            import torch
+            from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
+            if not torch.cuda.is_available():
+                raise RuntimeFailure("Không có GPU. Trong Kaggle chọn Settings > Accelerator > GPU T4 x2.")
+            free, total = torch.cuda.mem_get_info(0)
+            if free < 8 * 1024**3:
+                raise RuntimeFailure(f"GPU 0 còn {free / 1024**3:.1f} GiB; cần ít nhất 8 GiB trống.")
+            dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
+            self.processor = AutoTokenizer.from_pretrained(config.model_id, revision=config.revision)
+            quantization = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type="nf4",
+                                             bnb_4bit_use_double_quant=True, bnb_4bit_compute_dtype=dtype)
+            self.model = AutoModelForCausalLM.from_pretrained(
+                config.model_id, revision=config.revision, dtype=dtype,
+                quantization_config=quantization, device_map={"": 0}, attn_implementation="sdpa")
+            self.model.eval()
+            self.config = config
+            self.skip_special_tokens = True
+            self.info = {"backend": "huggingface-qwen", "model_id": config.model_id,
+                         "requested_revision": config.revision,
+                         "resolved_revision": getattr(self.model.config, "_commit_hash", None),
+                         "gpu": torch.cuda.get_device_name(0), "vram_total_bytes": total,
+                         "vram_free_before_load_bytes": free, "dtype": str(dtype), "quantization": "nf4-double",
+                         "versions": package_versions(), "model_load_seconds": time.perf_counter() - started}
+        except RuntimeFailure:
+            raise
+        except Exception as exc:
+            raise RuntimeFailure(f"Không nạp được Qwen: {type(exc).__name__}: {exc}") from exc
+
+    def inputs(self, messages):
+        return self.processor.apply_chat_template(messages, tokenize=True, return_dict=True,
+                                                  return_tensors="pt", add_generation_prompt=True)
 
 
 SYSTEM = """Bạn tạo chương trình Python trả lời câu hỏi DataMate từ dữ liệu được cấp.

@@ -94,7 +94,23 @@ def parse_number(value, decimal_separator=None):
 
 
 def round_half_up(value, digits=0):
-    result = Decimal(str(value)).quantize(Decimal(1).scaleb(-digits), rounding=ROUND_HALF_UP)
+    if isinstance(value, str):
+        preview = value if len(value) <= 60 else value[:57] + "..."
+        raise TypeError(
+            f"round_half_up requires a finite number, got str {preview!r}; "
+            "parse text/money columns with parse_money() or parse_number() before summing."
+        )
+    if isinstance(value, bool) or not isinstance(value, (int, float, Decimal, np.number)):
+        raise TypeError(f"round_half_up requires a finite number, got {type(value).__name__}: {value!r}")
+    if isinstance(value, Decimal):
+        if not value.is_finite():
+            raise ValueError(f"round_half_up requires a finite number, got {value!r}")
+        decimal_value = value
+    else:
+        if not math.isfinite(float(value)):
+            raise ValueError(f"round_half_up requires a finite number, got {value!r}")
+        decimal_value = Decimal(str(value))
+    result = decimal_value.quantize(Decimal(1).scaleb(-digits), rounding=ROUND_HALF_UP)
     return int(result) if digits == 0 else float(result)
 
 

@@ -2,6 +2,7 @@
 import ast
 from dataclasses import replace
 import datetime as dt
+from decimal import Decimal
 import json
 from pathlib import Path
 import sqlite3
@@ -90,6 +91,15 @@ class FixtureTests(unittest.TestCase):
                 baseline.parse_number(value)
         self.assertEqual(baseline.round_half_up(2.5), 3)
         self.assertEqual(baseline.round_half_up(12.345, 2), 12.35)
+        self.assertEqual(baseline.round_half_up(np.float64(2.5)), 3)
+        with self.assertRaisesRegex(TypeError, "parse_money"):
+            baseline.round_half_up("13,353,00026,181,000")
+        for bad in (True, None):
+            with self.assertRaises(TypeError):
+                baseline.round_half_up(bad)
+        for bad_num in (float("nan"), float("inf"), Decimal("NaN")):
+            with self.assertRaises(ValueError):
+                baseline.round_half_up(bad_num)
         self.assertEqual(baseline.parse_date("01/02/2025"), pd.Timestamp("2025-02-01"))
         self.assertEqual(baseline.parse_date(45689), pd.Timestamp("2025-02-01"))
         self.assertEqual(baseline.parse_date("01/02", sheet="Thang 02 2025"), pd.Timestamp("2025-02-01"))

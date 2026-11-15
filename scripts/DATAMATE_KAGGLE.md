@@ -37,7 +37,7 @@ Kiểm tra schema và trích dẫn không chứng minh suy luận nghiệp vụ 
 
 Notebook cũ quan sát được 5/5 câu lỗi selection. Trace câu đầu trả JSON
 đáp án thay vì JSON chọn bảng/cột cả bốn lần. Notebook mới tách hợp đồng
-mỗi bước vào system prompt và cuối user prompt, phân biệt tài liệu nghiệp vụ
+mỗi bước vào system prompt, cuối user chỉ nhắc tuân thủ, phân biệt tài liệu nghiệp vụ
 với chỉ thị định dạng. Không ép JSON đáp án thành JSON kế hoạch.
 
 ## Debug và kết quả
@@ -69,7 +69,14 @@ kết thúc phiên Kaggle. Cell timeline cuối đọc lại trace mà không g�
 ## Giới hạn và kiểm thử
 
 Giữ chunked prefill 256 token, dynamic KV cache và logits token cuối từ backend cũ.
-Không cắt âm thầm luật khi vượt 12.288 input token: dừng bằng ContextOverflow.
+Bước 3 dùng catalog gọn, không đưa dòng mẫu vào prompt. Bước khác thử catalog đầy đủ,
+ngay khi vượt 12.288 input token thì bỏ mẫu và metadata nguồn lặp; giữ mọi bảng/cột,
+dtype, số dòng, tên file/sheet. Hợp đồng chỉ gửi một lần trong system prompt.
+Rulebook, README, câu hỏi, bằng chứng, kế hoạch và phản hồi sửa lỗi giữ nguyên.
+Trace ghi `context_attempts` và `compact_catalog`; nếu vẫn vượt thì dừng ContextOverflow.
+Không tự tăng ngân sách VRAM hay cắt luật. Khi cập nhật trong session đang chạy,
+thay và chạy lại cell định nghĩa `BASE_SYSTEM`/`context_for`/`ask`, rồi bước 3;
+không cần nạp lại model.
 OOM: restart session, thử `PREFILL_CHUNK_SIZE=128` và thư mục mới; không nạp model
 chồng lên model cũ. Chỉ GPU đầu tiên được dùng. Chưa xác thực GPU Kaggle ở môi trường
 phát triển; chưa có số đo accuracy hay VRAM cho pipeline mới.

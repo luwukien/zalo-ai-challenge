@@ -165,6 +165,43 @@ class NotebookTests(unittest.TestCase):
             self.assertEqual(trace['status'], 'stopped')
             self.assertNotIn('prediction', trace)
 
+    def test_domain_uses_compact_catalog_and_single_contract(self):
+        self.ns['MODEL'] = Model([DOMAIN])
+        state = self.ns['load_question'](self.q)
+        self.ns['assimilate_domain'](state)
+        event = state['trace']['events'][0]
+        self.assertTrue(event['compact_catalog'])
+        context = self.ns['context_for'](state, compact=True)
+        self.assertEqual(context['readme'], state['readme'])
+        self.assertEqual(context['rulebook'], RULE)
+        self.assertEqual(context['question'], self.q)
+        self.assertEqual(set(context['catalog'][0]['columns']), set(state['tables']['sales'].columns))
+        self.assertEqual(context['catalog'][0]['row_count'], 3)
+        self.assertIn('sales.csv', context['catalog'][0]['source_sheets'])
+        messages = event['messages']
+        self.assertIn('BƯỚC 3: chỉ trả JSON', messages[0]['content'])
+        self.assertNotIn('BƯỚC 3: chỉ trả JSON', messages[1]['content'])
+
+    def test_overflow_rebuilds_catalog_before_generation_and_preserves_repair(self):
+        class BudgetModel(Model):
+            def count_tokens(self, messages):
+                return 12529 if '"sample_rows"' in messages[1]['content'] else 11000
+
+        model = BudgetModel(['invalid JSON', PLAN])
+        self.ns['MODEL'] = model
+        state = self.ns['load_question'](self.q)
+        state['insights'] = {'decision': 'ready', 'evidence': ['EVIDENCE_KEEP']}
+        self.ns['formulate_plan'](state)
+        for event in state['trace']['events']:
+            self.assertEqual(event['context_attempts'], [
+                {'compact': False, 'input_tokens': 12529},
+                {'compact': True, 'input_tokens': 11000}])
+            self.assertIn(RULE, event['messages'][1]['content'])
+            self.assertIn('EVIDENCE_KEEP', event['messages'][1]['content'])
+        self.assertEqual(len(model.calls), 2)
+        self.assertIn('invalid JSON', model.calls[-1][1]['content'])
+        self.assertIn('LỖI CẦN SỬA', model.calls[-1][1]['content'])
+
 
 if __name__ == '__main__':
     unittest.main()

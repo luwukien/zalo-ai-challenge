@@ -1,53 +1,84 @@
-# Chạy DataMate với Qwen trên Kaggle
+# DataMate Qwen trên Kaggle: baseline 6 bước
 
-Notebook: `notebooks/datamate_qwen_kaggle.ipynb`. Thử nghiệm dùng
-`Qwen/Qwen3-4B-Instruct-2507` (4B, Apache-2.0), nạp 4-bit NF4 lên GPU 0.
-Kaggle T4 x2 có hai GPU, nhưng notebook hiện chỉ dùng GPU đầu tiên.
+Notebook: `notebooks/datamate_qwen_kaggle.ipynb`.
+Dùng `Qwen/Qwen3-4B-Instruct-2507`, NF4 4-bit trên GPU 0.
 
-1. Đưa thư mục dữ liệu đã chia từ Drive lên **Kaggle Dataset riêng tư**.
-   Giữ cấu trúc `ten-thu-muc/train/questions.jsonl`, `train/rulebook.md`,
-   `train/calendar.csv`, `train/data/` và tương tự cho `validation/`.
-   Có thể chỉ thêm `train/` khi thử 5 câu đầu. Không tải dữ liệu lên GitHub.
-2. Tạo Kaggle Notebook, import file notebook này. Trong Settings bật Internet,
-   chọn Accelerator **GPU T4 x2**, rồi bấm **Add Input** để gắn dataset.
-3. Chạy các ô theo thứ tự. Mặc định dùng 5 câu train. Notebook tìm đường dẫn
-   `train/` trong `/kaggle/input`; nếu có nhiều dataset phù hợp, điền `DATA_ROOT`
-   trong ô cấu hình thành thư mục cha của `train/`.
-4. Kết quả được ghi vào `/kaggle/working/datamate_runs/`: `predictions.jsonl`,
-   `trace.jsonl`, `summary.json`, code theo từng câu và các checkpoint. Tải kết quả
-   từ phần Output của Kaggle; phiên làm việc có thể bị xóa khi kết thúc.
-5. Muốn thử validation, đổi `SPLIT` thành `validation` và `LIMIT` thành số câu
-   cần thử hoặc `None`, chọn thư mục đầu ra mới rồi chạy lại.
+## Cách chạy
 
-## Khắc phục OOM khi xử lý prompt dài
+1. Import notebook vào Kaggle, bật Internet và GPU T4 x2.
+2. Add Input dataset riêng tư chứa `train/` hoặc `validation/` với
+   `questions.jsonl`, `rulebook.md`, `calendar.csv`, `data/<business_id>/README.md`
+   và các file nghiệp vụ. `answers.jsonl` là tùy chọn, chỉ dùng đánh giá cuối.
+3. Mặc định `QUESTION_INDEX=0`, `RUN_BATCH=False`: chạy các cell theo thứ tự
+   để quan sát một câu. `DATA_ROOT=None` tự tìm thư mục cha của split;
+   nếu tìm thấy nhiều dataset thì điền đường dẫn cụ thể.
+4. Sau khi kiểm tra một câu, bật `RUN_BATCH=True`, đặt `LIMIT=5` hoặc `None`
+   để chạy toàn bộ split. Batch chạy độc lập, có thể chạy lại câu debug.
+5. Validation: đổi `SPLIT="validation"`, chọn giới hạn và chạy phiên mới.
 
-Model 4-bit vừa VRAM không có nghĩa mọi phép tính lúc inference đều vừa.
-SDPA có thể dùng math backend với tensor trung gian lớn; chỉ đổi allocator
-không giải quyết được một lần cấp phát lớn hơn VRAM còn trống.
-Log OOM chưa có stack trace không đủ để khẳng định chính xác phép tính gây lỗi.
+## Sáu bước và bằng chứng quan sát
 
-Backend Qwen dùng `prefill_chunk_size=256`, KV cache động và `logits_to_keep=1`.
-Prompt được xử lý từng khối, giữ nguyên nội dung và giới hạn 12.288 token.
-Cách này giảm kích thước tensor trung gian lúc đọc prompt, có thể chậm hơn;
-không bảo đảm mọi cấu hình đều hết OOM. Tham số được ghi trong thông tin model.
-Gemma không áp dụng các tùy chọn Qwen này.
+| Bước | Công việc | Đầu ra |
+| --- | --- | --- |
+| 1. Explore Environment | Python kiểm tra thư viện, GPU, VRAM | Thông tin môi trường |
+| 2. Load Data Structure | Đọc tài liệu, nạp bảng không sửa dữ liệu gốc | Schema, số dòng, mẫu, nguồn |
+| 3. Assimilate Domain Knowledge | Agent đọc nghĩa dữ liệu, luật và điểm chưa rõ | JSON có trích dẫn; Python probe tùy chọn |
+| 4. Extract Insights | Agent sinh/chạy Python trên toàn bộ dữ liệu để kiểm tra luật | Thống kê và quyết định ready/reread/explore/unanswerable |
+| 5. Formulate Plan | Chọn bảng/cột và thứ tự thao tác | JSON kế hoạch và điều kiện kiểm tra |
+| 6. Execute | Sinh/chạy Python theo kế hoạch và sửa lỗi có giới hạn | Dự đoán, stdout, traceback |
 
-Sau khi cập nhật từ notebook cũ:
-1. Tải kết quả cũ nếu cần, dừng và khởi động lại session Kaggle để bỏ model cũ.
-2. Import notebook mới, bật GPU và Internet, gắn dataset rồi Run All.
-3. Dùng thư mục đầu ra mới, `RESUME=False`: mã/cấu hình khác lượt cũ nên không resume.
-4. Nếu vẫn OOM, khởi động lại session, đặt `PREFILL_CHUNK_SIZE=128`, chạy vào
-   thư mục mới. Lưu `trace.jsonl` có traceback đầy đủ để xác định nơi cấp phát lỗi.
+Bước 4 có thể quay lại bước 3 hoặc chạy probe mới; tối đa `MAX_INSIGHT_ROUNDS=3`.
+Python không bị giới hạn ở bước 6: bước 1/2 dùng Python, bước 3 cho phép agent
+sinh probe, bước 4 yêu cầu agent chạy probe trước khi quyết định đủ bằng chứng.
+Công cụ `run_python` dùng chung cho các bước. Mỗi lời gọi model có tối đa
+`MAX_REPAIRS=2` lượt sửa sau lần đầu. Hết lượt khám phá/sửa là lỗi kỹ thuật
+`abstain`; `unanswerable` dành cho thiếu dữ liệu nghiệp vụ có bằng chứng.
+Kiểm tra schema và trích dẫn không chứng minh suy luận nghiệp vụ đúng.
 
-Không cần giảm `MAX_INPUT_TOKENS` trước: rulebook dài có thể gây `ContextOverflow`.
-Không chỉ chạy lại ô nạp model khi model cũ còn trên GPU. GPU thứ hai chưa được dùng.
-Chưa xác thực GPU Kaggle trong môi trường phát triển; kiểm thử CPU kiểm tra
-truyền tham số và giữ nguyên prompt, không chứng minh mức dùng VRAM thực tế.
-Tham khảo [chunked prefill trong Transformers 5.5.0](https://github.com/huggingface/transformers/blob/v5.5.0/src/transformers/generation/utils.py)
-và [SDPA của PyTorch](https://docs.pytorch.org/docs/stable/generated/torch.nn.functional.scaled_dot_product_attention).
+Notebook cũ quan sát được 5/5 câu lỗi selection. Trace câu đầu trả JSON
+đáp án thay vì JSON chọn bảng/cột cả bốn lần. Notebook mới tách hợp đồng
+mỗi bước vào system prompt và cuối user prompt, phân biệt tài liệu nghiệp vụ
+với chỉ thị định dạng. Không ép JSON đáp án thành JSON kế hoạch.
 
-Notebook tải script và model qua mạng, **không phải Docker offline nộp cuộc thi**.
-Không dùng test để huấn luyện.
-Đối chiếu nhãn chỉ là tham khảo và chỉ thực hiện sau khi đã tạo dự đoán.
+## Debug và kết quả
 
-Chạy kiểm thử CPU: `python -m unittest discover -s tests -v`.
+Logic điều phối, prompt và vòng lặp nằm ngay trong notebook.
+Loader, helper tiền/ngày, worker và Qwen backend được tải từ commit cố định
+`4b8f456b2c68da8093439c25a4cea495ef124325` của repository.
+Không gọi pipeline hai bước `run_baseline` cũ.
+
+Kết quả nằm dưới `/kaggle/working/datamate_runs/<run>/`:
+
+- `manifest.json`: cấu hình, phiên bản thư viện, thông tin model và helper commit.
+- `<question_id>/<attempt_time>/trace.json`: prompt, raw response, token, thời gian,
+  code, kết quả thực thi, stdout/stderr và traceback.
+- Cùng thư mục trace: `readme.md`, `rulebook.md`, các file `code_*.py`.
+- `predictions.jsonl`: dự đoán của lượt debug/batch được xuất tại cell báo cáo.
+- `evaluation.json`: đối chiếu tham khảo, không phải bộ chấm chính thức.
+
+Trong chế độ từng cell, lỗi dừng ở cell tương ứng để kiểm tra trace.
+Batch chuyển lỗi từng câu thành abstain; lỗi GPU/context dừng cả batch.
+Câu đang dừng vẫn có trace, không được xuất thành dự đoán hoàn thành.
+Đáp án tham khảo chỉ đọc sau khi ghi predictions, không được đưa vào prompt.
+
+Chạy lại bước trước sẽ vô hiệu hóa kết quả phụ thuộc phía sau. Muốn đổi câu,
+đổi `QUESTION_INDEX`, chạy lại cell `load_question` rồi các bước 3–6.
+Bản này không tự resume: mỗi lượt có thư mục riêng. Tải Output về trước khi
+kết thúc phiên Kaggle. Cell timeline cuối đọc lại trace mà không gọi model.
+
+## Giới hạn và kiểm thử
+
+Giữ chunked prefill 256 token, dynamic KV cache và logits token cuối từ backend cũ.
+Không cắt âm thầm luật khi vượt 12.288 input token: dừng bằng ContextOverflow.
+OOM: restart session, thử `PREFILL_CHUNK_SIZE=128` và thư mục mới; không nạp model
+chồng lên model cũ. Chỉ GPU đầu tiên được dùng. Chưa xác thực GPU Kaggle ở môi trường
+phát triển; chưa có số đo accuracy hay VRAM cho pipeline mới.
+
+Worker dùng subprocess, AST guard và timeout; không phải sandbox hoàn chỉnh.
+Đây là notebook thử nghiệm có tải mã/model qua Internet, chưa phải Docker offline.
+Không commit dữ liệu, weights hay log. Notebook lưu trong Git phải sạch output.
+
+Chạy `python -m unittest discover -s tests -v` từ thư mục dự án.
+`tests/test_datamate_notebook.py` chạy trực tiếp các hàm trong cell bằng model giả
+và dữ liệu tổng hợp: thành công, sai schema, đọc lại luật, probe trước Execute,
+sửa Python, hết vòng khám phá và dừng GPU/context; không tải model hay đọc dataset thật.

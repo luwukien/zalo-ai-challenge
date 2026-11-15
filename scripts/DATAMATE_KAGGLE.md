@@ -44,7 +44,7 @@ với chỉ thị định dạng. Không ép JSON đáp án thành JSON kế ho�
 
 Logic điều phối, prompt và vòng lặp nằm ngay trong notebook.
 Loader, helper tiền/ngày, worker và Qwen backend được tải từ commit cố định
-`4b8f456b2c68da8093439c25a4cea495ef124325` của repository.
+`1ebde592e4922cdc5fd3790e3031f8654f2fe57d` của repository.
 Không gọi pipeline hai bước `run_baseline` cũ.
 
 Kết quả nằm dưới `/kaggle/working/datamate_runs/<run>/`:

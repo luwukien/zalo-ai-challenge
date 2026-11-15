@@ -89,3 +89,33 @@ Chạy `python -m unittest discover -s tests -v` từ thư mục dự án.
 `tests/test_datamate_notebook.py` chạy trực tiếp các hàm trong cell bằng model giả
 và dữ liệu tổng hợp: thành công, sai schema, đọc lại luật, probe trước Execute,
 sửa Python, hết vòng khám phá và dừng GPU/context; không tải model hay đọc dataset thật.
+
+## Cập nhật trong session Kaggle đang chạy
+
+Thêm một cell sau đây vào notebook đang dùng, chỉ cần thêm một lần:
+
+```python
+import urllib.request
+sync_url = "https://raw.githubusercontent.com/luwukien/zalo-ai-challenge/codex/datamate-baseline/scripts/datamate_kaggle_sync.py"
+sync_module = {}
+with urllib.request.urlopen(sync_url, timeout=60) as response:
+    exec(compile(response.read(), sync_url, "exec"), sync_module)
+sync_module["sync_notebook"](globals())
+```
+
+Sau mỗi bản sửa đã push, chạy cell này khi kernel rảnh, rồi chạy lại từ bước 3.
+Không cần import notebook hay tải lại model. Không chạy lại các cell định nghĩa cũ
+ở phía trên: nội dung hiển thị trong giao diện không tự đổi, và chạy chúng sẽ ghi đè
+hàm vừa đồng bộ. Nếu cần đọc code hiện hành, xem snapshot trong
+`OUTPUT_DIR/code_updates/<commit>.ipynb`.
+
+Script resolve branch thành commit SHA rồi tải notebook tại commit đó; chỉ thực thi
+các cell có tag `definitions`. Không chạy cell config, pip, nạp model, batch hay chấm điểm.
+Model, cấu hình và bảng đã nạp được giữ; kiến thức/insights/plan/prediction cũ bị vô hiệu hóa,
+trace giữ lịch sử cùng commit cập nhật. Code không đổi thì không vô hiệu hóa state.
+Mạng/tải code/biên dịch lỗi trước khi thay hàm sẽ giữ code cũ. Internet Kaggle phải bật.
+
+Đây là thực thi code tin cậy từ repository dự án, không phải sandbox. Không có polling
+nền: push GitHub không tự thay kernel đang mở. Thay đổi dependencies, helper backend,
+model hoặc cấu hình không thuộc cơ chế này và vẫn cần cập nhật riêng. Không dùng
+cơ chế cập nhật giữa lượt inference; nó chỉ chạy khi bạn bấm cell cập nhật.

@@ -13,7 +13,7 @@ NOTEBOOK = Path(__file__).resolve().parents[1] / 'notebooks/datamate_qwen_kaggle
 RULE = 'Giữ mọi dòng; tổng tiền không loại trùng.'
 DOMAIN = json.dumps({'meaning': 'Tổng doanh thu', 'rules': [
     {'source': 'rulebook', 'quote': RULE, 'application': 'Cộng mọi dòng'}],
-    'unknowns': [], 'probe_code': None}, ensure_ascii=False)
+    'unknowns': []}, ensure_ascii=False)
 PROBE = '''def answer(tables, as_of_date, calendar):
     return {'type': 'string', 'answer': str(len(tables['sales'])) + ' rows'}
 '''
@@ -112,14 +112,23 @@ class NotebookTests(unittest.TestCase):
         self.assertIn('PHẢN HỒI SAI', events[1]['messages'][-1]['content'])
         self.assertEqual(trace['status'], 'success')
 
-    def test_reread_loop_and_early_python(self):
-        domain = json.loads(DOMAIN)
-        domain['probe_code'] = PROBE
-        trace = self.run_model([json.dumps(domain), PROBE, review('reread'), DOMAIN,
+    def test_reread_loop_and_python_starts_in_insights(self):
+        trace = self.run_model([DOMAIN, PROBE, review('reread'), DOMAIN,
                                 PROBE, review(), PLAN, CODE])
         self.assertEqual(trace['status'], 'success')
         self.assertEqual(sum(e['stage'] == '3_domain' for e in trace['events']), 2)
-        self.assertTrue(trace['events'][0]['execution']['ok'])
+        self.assertNotIn('execution', trace['events'][0])
+        self.assertTrue(next(e for e in trace['events'] if e['stage'] == '4_probe_0')['execution']['ok'])
+
+    def test_domain_rejects_code_and_repairs_without_executing_it(self):
+        wrong = json.loads(DOMAIN)
+        wrong['probe_code'] = PROBE
+        trace = self.run_model([json.dumps(wrong), DOMAIN, PROBE, review(), PLAN, CODE])
+        attempts = [e for e in trace['events'] if e['stage'] == '3_domain']
+        self.assertEqual([e['status'] for e in attempts], ['error', 'ok'])
+        self.assertNotIn('execution', attempts[0])
+        self.assertIn('chuyển Python', attempts[0]['error'])
+        self.assertEqual(trace['status'], 'success')
 
     def test_exploration_exhaustion_abstains(self):
         trace = self.run_model([DOMAIN, PROBE, review('explore'), PROBE, review('explore')])

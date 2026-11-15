@@ -22,14 +22,14 @@ Dùng `Qwen/Qwen3-4B-Instruct-2507`, NF4 4-bit trên GPU 0.
 | --- | --- | --- |
 | 1. Explore Environment | Python kiểm tra thư viện, GPU, VRAM | Thông tin môi trường |
 | 2. Load Data Structure | Đọc tài liệu, nạp bảng không sửa dữ liệu gốc | Schema, số dòng, mẫu, nguồn |
-| 3. Assimilate Domain Knowledge | Agent đọc nghĩa dữ liệu, luật và điểm chưa rõ | JSON có trích dẫn; Python probe tùy chọn |
+| 3. Assimilate Domain Knowledge | Agent đọc nghĩa dữ liệu, luật và điểm chưa rõ | JSON có trích dẫn và điểm chưa rõ; không chạy code |
 | 4. Extract Insights | Agent sinh/chạy Python trên toàn bộ dữ liệu để kiểm tra luật | Thống kê và quyết định ready/reread/explore/unanswerable |
 | 5. Formulate Plan | Chọn bảng/cột và thứ tự thao tác | JSON kế hoạch và điều kiện kiểm tra |
 | 6. Execute | Sinh/chạy Python theo kế hoạch và sửa lỗi có giới hạn | Dự đoán, stdout, traceback |
 
 Bước 4 có thể quay lại bước 3 hoặc chạy probe mới; tối đa `MAX_INSIGHT_ROUNDS=3`.
-Python không bị giới hạn ở bước 6: bước 1/2 dùng Python, bước 3 cho phép agent
-sinh probe, bước 4 yêu cầu agent chạy probe trước khi quyết định đủ bằng chứng.
+Python không bị giới hạn ở bước 6: bước 1/2 dùng Python để khám phá môi trường/cấu trúc,
+bước 3 chỉ đọc hiểu luật, bước 4 yêu cầu agent chạy probe trước khi quyết định đủ bằng chứng.
 Công cụ `run_python` dùng chung cho các bước. Mỗi lời gọi model có tối đa
 `MAX_REPAIRS=2` lượt sửa sau lần đầu. Hết lượt khám phá/sửa là lỗi kỹ thuật
 `abstain`; `unanswerable` dành cho thiếu dữ liệu nghiệp vụ có bằng chứng.
